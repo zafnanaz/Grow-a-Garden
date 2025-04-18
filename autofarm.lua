@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InsertService = game:GetService("InsertService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local Leaderstats = LocalPlayer.leaderstats
@@ -56,7 +57,7 @@ ReGui:DefineTheme("GardenTheme", {
 })
 
 --// Globals
-local SelectedSeed, AutoHarvest, SellThreshold
+local SelectedSeed, AutoHarvest, SellThreshold, NoClip, AutoWalkAllowRandom
 
 local function CreateWindow()
 	local Window = ReGui:Window({
@@ -93,6 +94,7 @@ local function GetFarm(PlayerName: string): Folder?
 			return Farm
 		end
 	end
+    return
 end
 
 local IsSelling = false
@@ -167,11 +169,6 @@ local function GetInvCrops(): table
 	CollectCropsFromParent(Character, Crops)
 
 	return Crops
-end
-
-local function GetSeedCount(SeedName: string): number
-	local Seeds = GetOwnedSeeds()
-	return Seeds[Name]
 end
 
 local function GetArea(Base: BasePart)
@@ -370,10 +367,11 @@ local function AutoWalkLoop()
     local Humanoid = Character.Humanoid
 
     local Plants = GetHarvestablePlants()
-    local DoRandom = math.random(1, 3) == 2
+	local RandomAllowed = AutoWalkAllowRandom.Value
+	local DoRandom = #Plants == 0 or math.random(1, 3) == 2
 
     --// Random point
-    if #Plants == 0 or DoRandom then
+    if RandomAllowed and DoRandom then
         local Position = GetRandomFarmPoint()
         Humanoid:MoveTo(Position)
 		AutoWalkStatus.Text = "Random point"
@@ -388,6 +386,7 @@ local function AutoWalkLoop()
     end
 end
 
+
 local function AutoHarvestService()
 	coroutine.wrap(function()
 		while true do
@@ -400,10 +399,31 @@ end
 local function AutoWalkService()
     coroutine.wrap(function()
 		while true do
+			local MaxWait = AutoWalkMaxWait.Value
 			AutoWalkLoop()
-			wait(math.random(1, 10))
+			wait(math.random(1, MaxWait))
 		end
 	end)()
+end
+
+local function NoclipLoop()
+    local Character = LocalPlayer.Character
+    if not NoClip.Value then return end
+    if not Character then return end
+
+    for _, Part in Character:GetDescendants() do
+        if Part:IsA("BasePart") then
+            Part.CanCollide = false
+        end
+    end
+end
+
+local function BuyAllSelectedSeeds()
+    local Seed = SelectedSeedStock.Selected
+    local Stock = SelectedSeedStock.Value
+    for i = 1, Stock do
+        BuySeed(Seed)
+    end
 end
 
 --// Window
@@ -437,13 +457,7 @@ SelectedSeedStock = BuyNode:Combo({
 })
 BuyNode:Button({
 	Text = "Buy all",
-	Callback = function()
-		local Seed = SelectedSeedStock.Selected
-		local Stock = SelectedSeedStock.Value
-		for i = 1, Stock do
-			BuySeed(Seed)
-		end
-	end,
+	Callback = BuyAllSelectedSeeds,
 })
 
 --// Auto-Sell
@@ -472,7 +486,25 @@ AutoWalk = WallNode:Checkbox({
 	Value = false,
 	Label = "Enabled"
 })
+AutoWalkAllowRandom = WallNode:Checkbox({
+	Value = true,
+	Label = "Allow random points"
+})
+NoClip = WallNode:Checkbox({
+	Value = false,
+	Label = "NoClip"
+})
+AutoWalkMaxWait = WallNode:SliderInt({
+    Label = "Max delay",
+    Value = 10,
+    Minimum = 1,
+    Maximum = 120,
+})
 
+--// Connections
+RunService.Stepped:Connect(NoclipLoop)
+Backpack.ChildAdded:Connect(AutoSellCheck)
+
+--// Services
 AutoHarvestService()
 AutoWalkService()
-Backpack.ChildAdded:Connect(AutoSellCheck)
