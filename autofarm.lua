@@ -256,15 +256,41 @@ local function GetSeedStock(AllowNoStock: boolean): table
 	return SeedStock
 end
 
-local function HarvestPlants(Parent: Model)
-	for _, Plant in next, Parent:GetChildren() do
-		HarvestPlant(Plant)
+local function CanHarvest(Plant): boolean?
+    local Prompt = Plant:FindFirstChild("ProximityPrompt", true)
+	if not Prompt then return end
+    if not Prompt.Enabled then return end
 
+    return true
+end
+
+local function CollectHarvestable(Parent, Plants)
+    for _, Plant in next, Parent:GetChildren() do
+        --// Fruits
 		local Fruits = Plant:FindFirstChild("Fruits")
 		if Fruits then
-			HarvestPlants(Fruits)
+			CollectHarvestable(Fruits, Plants)
 		end
+
+        --// Collect
+        if CanHarvest(Plant) then
+            table.insert(Plants, Plant)
+        end
 	end
+    return Plants
+end
+
+local function GetHarvestablePlants()
+    local Plants = {}
+    CollectHarvestable(PlantsPhysical, Plants)
+    return Plants
+end
+
+local function HarvestPlants(Parent: Model)
+	local Plants = GetHarvestablePlants()
+    for _, Plant in next, Plants do
+        HarvestPlant(Plant)
+    end
 end
 
 local function AutoHarvestLoop()
@@ -325,13 +351,7 @@ end
 --    	ClearUp()
 -- end
 
-local function AutoWalkLoop()
-    if not AutoWalk.Value then return end
-	if IsSelling then return end
-
-    local Character = LocalPlayer.Character
-    local Humanoid = Character.Humanoid
-
+local function GetRandomFarmPoint(): Vector3
     local FarmLands = PlantLocations:GetChildren()
     local FarmLand = FarmLands[math.random(1, #FarmLands)]
 
@@ -339,8 +359,33 @@ local function AutoWalkLoop()
     local X = math.random(X1, X2)
     local Z = math.random(Z1, Z2)
 
-    local Position = Vector3.new(X, 4, Z)
-    Humanoid:MoveTo(Position)
+    return Vector3.new(X, 4, Z)
+end
+
+local function AutoWalkLoop()
+    if not AutoWalk.Value then return end
+	if IsSelling then return end
+
+    local Character = LocalPlayer.Character
+    local Humanoid = Character.Humanoid
+
+    local Plants = GetHarvestablePlants()
+    local DoRandom = math.random(1, 3) == 2
+
+    --// Random point
+    if #Plants == 0 or DoRandom then
+        local Position = GetRandomFarmPoint()
+        Humanoid:MoveTo(Position)
+		AutoWalkStatus.Text = "Random point"
+        return
+    end
+   
+    --// Move to each plant
+    for _, Plant in next, Plants do
+        local Position = Plant:GetPivot().Position
+        Humanoid:MoveTo(Position)
+		AutoWalkStatus.Text = Plant.Name
+    end
 end
 
 local function AutoHarvestService()
@@ -356,7 +401,7 @@ local function AutoWalkService()
     coroutine.wrap(function()
 		while true do
 			AutoWalkLoop()
-			wait(math.random(1, 20))
+			wait(math.random(1, 10))
 		end
 	end)()
 end
@@ -420,6 +465,9 @@ SellThreshold = SellNode:SliderInt({
 
 --// Auto-Walk
 local WallNode = Window:TreeNode({Title="Auto-Walk 🚶"})
+AutoWalkStatus = WallNode:Label({
+	Text = "None"
+})
 AutoWalk = WallNode:Checkbox({
 	Value = false,
 	Label = "Enabled"
