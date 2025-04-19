@@ -61,6 +61,11 @@ ReGui:DefineTheme("GardenTheme", {
 --// Dicts
 local SeedStock = {}
 local OwnedSeeds = {}
+local HarvestIgnores = {
+	Normal = false,
+	Gold = false,
+	Rainbow = false
+}
 
 --// Globals
 local SelectedSeed, AutoPlantRandom, AutoPlant, AutoHarvest, AutoBuy, SellThreshold, NoClip, AutoWalkAllowRandom
@@ -270,6 +275,8 @@ end
 
 local function HarvestPlant(Plant: Model)
 	local Prompt = Plant:FindFirstChild("ProximityPrompt", true)
+
+	--// Check if it can be harvested
 	if not Prompt then return end
 	fireproximityprompt(Prompt)
 end
@@ -323,6 +330,10 @@ local function CollectHarvestable(Parent, Plants, IgnoreDistance: boolean?)
 		local PlantPosition = Plant:GetPivot().Position
 		local Distance = (PlayerPosition-PlantPosition).Magnitude
 		if not IgnoreDistance and Distance > 15 then continue end
+
+		--// Ignore check
+		local Variant = Plant:FindFirstChild("Variant")
+		if HarvestIgnores[Variant.Value] then return end
 
         --// Collect
         if CanHarvest(Plant) then
@@ -427,6 +438,18 @@ local function StartServices()
 	end
 end
 
+local function CreateCheckboxes(Parent, Dict: table)
+	for Key, Value in next, Dict do
+		Parent:Checkbox({
+			Value = Value,
+			Label = Key,
+			Callback = function(_, Value)
+				Dict[Key] = Value
+			end
+		})
+	end
+end
+
 --// Window
 local Window = CreateWindow()
 
@@ -456,6 +479,8 @@ AutoHarvest = HarvestNode:Checkbox({
 	Value = false,
 	Label = "Enabled"
 })
+HarvestNode:Separator({Text="Ignores:"})
+CreateCheckboxes(HarvestNode, HarvestIgnores)
 
 --// Auto-Buy
 local BuyNode = Window:TreeNode({Title="Auto-Buy 🥕"})
