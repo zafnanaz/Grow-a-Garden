@@ -14,6 +14,8 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Leaderstats = LocalPlayer.leaderstats
 local Backpack = LocalPlayer.Backpack
+local PlayerGui = LocalPlayer.PlayerGui
+
 local ShecklesCount = Leaderstats.Sheckles
 local GameInfo = MarketplaceService:GetProductInfo(game.PlaceId)
 
@@ -56,8 +58,12 @@ ReGui:DefineTheme("GardenTheme", {
     SliderGrab = Accent.Green,
 })
 
+--// Dicts
+local SeedStock = {}
+local OwnedSeeds = {}
+
 --// Globals
-local SelectedSeed, AutoHarvest, SellThreshold, NoClip, AutoWalkAllowRandom
+local SelectedSeed, AutoPlantRandom, AutoPlant, AutoHarvest, AutoBuy, SellThreshold, NoClip, AutoWalkAllowRandom
 
 local function CreateWindow()
 	local Window = ReGui:Window({
@@ -122,6 +128,17 @@ local function BuySeed(Seed: string)
 	GameEvents.BuySeedStock:FireServer(Seed)
 end
 
+local function BuyAllSelectedSeeds()
+    local Seed = SelectedSeedStock.Selected
+    local Stock = SeedStock[Seed]
+
+	if not Stock or Stock <= 0 then return end
+
+    for i = 1, Stock do
+        BuySeed(Seed)
+    end
+end
+
 local function GetSeedInfo(Seed: Tool): number?
 	local PlantName = Seed:FindFirstChild("Plant_Name")
 	local Count = Seed:FindFirstChild("Numbers")
@@ -154,11 +171,10 @@ end
 local function GetOwnedSeeds(): table
 	local Character = LocalPlayer.Character
 	
-	local Seeds = {}
-	CollectSeedsFromParent(Backpack, Seeds)
-	CollectSeedsFromParent(Character, Seeds)
+	CollectSeedsFromParent(Backpack, OwnedSeeds)
+	CollectSeedsFromParent(Character, OwnedSeeds)
 
-	return Seeds
+	return OwnedSeeds
 end
 
 local function GetInvCrops(): table
@@ -200,27 +216,54 @@ local MyImportant = MyFarm.Important
 local PlantLocations = MyImportant.Plant_Locations
 local PlantsPhysical = MyImportant.Plants_Physical
 
-local Dirt = PlantLocations:GetChildren()[1]
+local Dirt = PlantLocations:FindFirstChildOfClass("Part")
 local X1, Z1, X2, Z2 = GetArea(Dirt)
---print("Area:", X2-X1, Z2-Z1)
 
-local function AutoPlant()
+local function GetRandomFarmPoint(): Vector3
+    local FarmLands = PlantLocations:GetChildren()
+    local FarmLand = FarmLands[math.random(1, #FarmLands)]
+
+    local X1, Z1, X2, Z2 = GetArea(FarmLand)
+    local X = math.random(X1, X2)
+    local Z = math.random(Z1, Z2)
+
+    return Vector3.new(X, 4, Z)
+end
+
+local function AutoPlantLoop()
 	local Seed = SelectedSeed.Selected
-	local SeedData = SelectedSeed.Value
+
+	local SeedData = OwnedSeeds[Seed]
+	if not SeedData then return end
+
     local Count = SeedData.Count
     local Tool = SeedData.Tool
+
+	--// Check for stock
+	if Count <= 0 then return end
 
     local Planted = 0
 	local Step = 1
 
+	--// Check if the client needs to equip the tool
     EquipCheck(Tool)
+
+	--// Plant at random points
+	if AutoPlantRandom.Value then
+		for i = 1, Count do
+			local Point = GetRandomFarmPoint()
+			Plant(Point, Seed)
+		end
+	end
 	
+	--// Plant on the farmland area
 	for X = X1, X2, Step do
 		for Z = Z1, Z2, Step do
 			if Planted > Count then break end
-            
+			local Point = Vector3.new(X, 0.13, Z)
+
 			Planted += 1
-			Plant(Vector3.new(X, 0.13, Z), Seed)
+			Plant(Point, Seed)
 		end
 	end
 end
@@ -231,13 +274,12 @@ local function HarvestPlant(Plant: Model)
 	fireproximityprompt(Prompt)
 end
 
-local function GetSeedStock(AllowNoStock: boolean): table
-	local SeedStock = {}
-
-	local PlayerGui = LocalPlayer.PlayerGui
+local function GetSeedStock(IgnoreNoStock: boolean?): table
 	local SeedShop = PlayerGui.Seed_Shop
 	local Items = SeedShop:FindFirstChild("Item_Size", true).Parent
-	
+
+	local NewList = {}
+
 	for _, Item in next, Items:GetChildren() do
 		local MainFrame = Item:FindFirstChild("Main_Frame")
 		if not MainFrame then continue end
@@ -245,12 +287,17 @@ local function GetSeedStock(AllowNoStock: boolean): table
 		local StockText = MainFrame.Stock_Text.Text
 		local StockCount = tonumber(StockText:match("%d+"))
 
-		if not AllowNoStock and StockCount <= 0 then continue end
+		--// Seperate list
+		if IgnoreNoStock then
+			if StockCount <= 0 then continue end
+			NewList[Item.Name] = StockCount
+			continue
+		end
 
 		SeedStock[Item.Name] = StockCount
 	end
 
-	return SeedStock
+	return IgnoreNoStock and NewList or SeedStock
 end
 
 local function CanHarvest(Plant): boolean?
@@ -262,12 +309,20 @@ local function CanHarvest(Plant): boolean?
 end
 
 local function CollectHarvestable(Parent, Plants)
+	local Character = LocalPlayer.Character
+	local PlayerPosition = Character:GetPivot().Position
+
     for _, Plant in next, Parent:GetChildren() do
         --// Fruits
 		local Fruits = Plant:FindFirstChild("Fruits")
 		if Fruits then
 			CollectHarvestable(Fruits, Plants)
 		end
+
+		--// Distance check
+		local PlantPosition = Plant:GetPivot().Position
+		local Distance = (PlayerPosition-PlantPosition).Magnitude
+		if Distance > 15 then continue end
 
         --// Collect
         if CanHarvest(Plant) then
@@ -290,12 +345,6 @@ local function HarvestPlants(Parent: Model)
     end
 end
 
-local function AutoHarvestLoop()
-	if not AutoHarvest.Value then return end
-
-	HarvestPlants(PlantsPhysical)
-end
-
 local function AutoSellCheck()
     local CropCount = #GetInvCrops()
 
@@ -305,62 +354,7 @@ local function AutoSellCheck()
     SellInventory()
 end
 
--- local function PathfindPoint(TargetCFrame: CFrame)
---     local Character = LocalPlayer.Character
-
---     --// Create part for pathfinding
---     local Part = Instance.new("Part", workspace)
---     Part.Anchored = true
---     Part.CanCollide = false
---     Part:PivotTo(TargetCFrame)
-
---     --// Create path interface
---     local Path = SimplePath.new(Character, nil, PathSettings)
---     Path.Visualize = true
-
--- 	local function Run()
--- 		Path:Run(Part)
--- 	end
-
--- 	local function ClearUp()
--- 		Part:Destroy()
--- 		local Events = Path._events
--- 		if Events then
--- 			Events.Reached:Fire()
--- 			Path:Destroy()
--- 		end
--- 	end
-
---     local function Error(ErrorType)
---         Character:PivotTo(TargetCFrame)
--- 		ClearUp()
---     end
-    
---     --// Connections
---     Path.Error:Connect(Error)
--- 	Path.Blocked:Connect(Run)
--- 	Path.WaypointReached:Connect(Run)
-    
---     --// Run path
---     Run()
---     Path.Reached:Wait()
-
---    	ClearUp()
--- end
-
-local function GetRandomFarmPoint(): Vector3
-    local FarmLands = PlantLocations:GetChildren()
-    local FarmLand = FarmLands[math.random(1, #FarmLands)]
-
-    local X1, Z1, X2, Z2 = GetArea(FarmLand)
-    local X = math.random(X1, X2)
-    local Z = math.random(Z1, Z2)
-
-    return Vector3.new(X, 4, Z)
-end
-
 local function AutoWalkLoop()
-    if not AutoWalk.Value then return end
 	if IsSelling then return end
 
     local Character = LocalPlayer.Character
@@ -386,26 +380,6 @@ local function AutoWalkLoop()
     end
 end
 
-
-local function AutoHarvestService()
-	coroutine.wrap(function()
-		while true do
-			AutoHarvestLoop()
-			wait(1)
-		end
-	end)()
-end
-
-local function AutoWalkService()
-    coroutine.wrap(function()
-		while true do
-			local MaxWait = AutoWalkMaxWait.Value
-			AutoWalkLoop()
-			wait(math.random(1, MaxWait))
-		end
-	end)()
-end
-
 local function NoclipLoop()
     local Character = LocalPlayer.Character
     if not NoClip.Value then return end
@@ -418,12 +392,39 @@ local function NoclipLoop()
     end
 end
 
-local function BuyAllSelectedSeeds()
-    local Seed = SelectedSeedStock.Selected
-    local Stock = SelectedSeedStock.Value
-    for i = 1, Stock do
-        BuySeed(Seed)
-    end
+local function MakeLoop(Toggle, Func)
+	coroutine.wrap(function()
+		while wait(.01) do
+			if not Toggle.Value then continue end
+			Func()
+		end
+	end)()
+end
+
+local function StartServices()
+	--// Auto-Walk
+	MakeLoop(AutoWalk, function()
+		local MaxWait = AutoWalkMaxWait.Value
+		AutoWalkLoop()
+		wait(math.random(1, MaxWait))
+	end)
+
+	--// Auto-Harvest
+	MakeLoop(AutoHarvest, function()
+		HarvestPlants(PlantsPhysical)
+	end)
+
+	--// Auto-Buy
+	MakeLoop(AutoBuy, BuyAllSelectedSeeds)
+
+	--// Auto-Plant
+	MakeLoop(AutoPlant, AutoPlantLoop)
+
+	--// Get stocks
+	while wait(.1) do
+		GetSeedStock()
+		GetOwnedSeeds()
+	end
 end
 
 --// Window
@@ -434,11 +435,19 @@ local PlantNode = Window:TreeNode({Title="Auto-Plant 🥕"})
 SelectedSeed = PlantNode:Combo({
 	Label = "Seed",
 	Selected = "",
-	GetItems = GetOwnedSeeds,
+	GetItems = GetSeedStock,
+})
+AutoPlant = PlantNode:Checkbox({
+	Value = false,
+	Label = "Enabled"
+})
+AutoPlantRandom = PlantNode:Checkbox({
+	Value = false,
+	Label = "Plant at random points"
 })
 PlantNode:Button({
-	Text = "Auto plant",
-	Callback = AutoPlant,
+	Text = "Plant all",
+	Callback = AutoPlantLoop,
 })
 
 --// Auto-Harvest
@@ -450,10 +459,23 @@ AutoHarvest = HarvestNode:Checkbox({
 
 --// Auto-Buy
 local BuyNode = Window:TreeNode({Title="Auto-Buy 🥕"})
+local OnlyShowStock
+
 SelectedSeedStock = BuyNode:Combo({
 	Label = "Seed",
 	Selected = "",
-	GetItems = GetSeedStock,
+	GetItems = function()
+		local OnlyStock = OnlyShowStock and OnlyShowStock.Value
+		return GetSeedStock(OnlyStock)
+	end,
+})
+AutoBuy = BuyNode:Checkbox({
+	Value = false,
+	Label = "Enabled"
+})
+OnlyShowStock = BuyNode:Checkbox({
+	Value = false,
+	Label = "Only list stock"
 })
 BuyNode:Button({
 	Text = "Buy all",
@@ -506,5 +528,4 @@ RunService.Stepped:Connect(NoclipLoop)
 Backpack.ChildAdded:Connect(AutoSellCheck)
 
 --// Services
-AutoHarvestService()
-AutoWalkService()
+StartServices()
