@@ -308,7 +308,7 @@ local function CanHarvest(Plant): boolean?
     return true
 end
 
-local function CollectHarvestable(Parent, Plants)
+local function CollectHarvestable(Parent, Plants, IgnoreDistance: boolean?)
 	local Character = LocalPlayer.Character
 	local PlayerPosition = Character:GetPivot().Position
 
@@ -316,13 +316,13 @@ local function CollectHarvestable(Parent, Plants)
         --// Fruits
 		local Fruits = Plant:FindFirstChild("Fruits")
 		if Fruits then
-			CollectHarvestable(Fruits, Plants)
+			CollectHarvestable(Fruits, Plants, IgnoreDistance)
 		end
 
 		--// Distance check
 		local PlantPosition = Plant:GetPivot().Position
 		local Distance = (PlayerPosition-PlantPosition).Magnitude
-		if Distance > 15 then continue end
+		if not IgnoreDistance and Distance > 15 then continue end
 
         --// Collect
         if CanHarvest(Plant) then
@@ -332,9 +332,9 @@ local function CollectHarvestable(Parent, Plants)
     return Plants
 end
 
-local function GetHarvestablePlants()
+local function GetHarvestablePlants(IgnoreDistance: boolean?)
     local Plants = {}
-    CollectHarvestable(PlantsPhysical, Plants)
+    CollectHarvestable(PlantsPhysical, Plants, IgnoreDistance)
     return Plants
 end
 
@@ -360,7 +360,7 @@ local function AutoWalkLoop()
     local Character = LocalPlayer.Character
     local Humanoid = Character.Humanoid
 
-    local Plants = GetHarvestablePlants()
+    local Plants = GetHarvestablePlants(true)
 	local RandomAllowed = AutoWalkAllowRandom.Value
 	local DoRandom = #Plants == 0 or math.random(1, 3) == 2
 
