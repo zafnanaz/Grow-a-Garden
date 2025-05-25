@@ -1,7 +1,7 @@
 --[[
-@author depso (depthso)
-@description Grow a Garden auto-farm script
-https://www.roblox.com/games/126884695634066
+    @author depso (depthso)
+    @description Grow a Garden auto-farm script
+    https://www.roblox.com/games/126884695634066
 ]]
 
 --// Services
@@ -19,14 +19,6 @@ local PlayerGui = LocalPlayer.PlayerGui
 local ShecklesCount = Leaderstats.Sheckles
 local GameInfo = MarketplaceService:GetProductInfo(game.PlaceId)
 
--- --// Simple path
--- local SimplePath = loadstring(game:HttpGet('https://raw.githubusercontent.com/grayzcale/simplepath/refs/heads/main/src/SimplePath.lua'))()
--- local PathSettings = {
--- 	TIME_VARIANCE = 0,
--- 	JUMP_WHEN_STUCK = false,
--- 	COMPARISON_CHECKS = 1
--- }
-
 --// ReGui
 local ReGui = loadstring(game:HttpGet('https://raw.githubusercontent.com/depthso/Dear-ReGui/refs/heads/main/ReGui.lua'))()
 local PrefabsId = "rbxassetid://" .. ReGui.PrefabsId
@@ -38,7 +30,7 @@ local Farms = workspace.Farm
 local Accent = {
     DarkGreen = Color3.fromRGB(45, 95, 25),
     Green = Color3.fromRGB(69, 142, 40),
-    Brown = Color3.fromRGB(43, 33, 13),
+    Brown = Color3.fromRGB(26, 20, 8),
 }
 
 --// ReGui configuration (Ui library)
@@ -283,7 +275,7 @@ end
 
 local function GetSeedStock(IgnoreNoStock: boolean?): table
 	local SeedShop = PlayerGui.Seed_Shop
-	local Items = SeedShop:FindFirstChild("Item_Size", true).Parent
+	local Items = SeedShop:FindFirstChild("Blueberry", true).Parent
 
 	local NewList = {}
 
