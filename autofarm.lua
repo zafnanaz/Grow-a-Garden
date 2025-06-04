@@ -325,7 +325,7 @@ local function CollectHarvestable(Parent, Plants, IgnoreDistance: boolean?)
 
 		--// Ignore check
 		local Variant = Plant:FindFirstChild("Variant")
-		if HarvestIgnores[Variant.Value] then return end
+		if HarvestIgnores[Variant.Value] then continue end
 
         --// Collect
         if CanHarvest(Plant) then
